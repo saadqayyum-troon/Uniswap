@@ -20,8 +20,8 @@ import "./Helpers/TransferHelper.sol";
      // For this example, we will set the pool fee to 0.3%.   0.3 * 10000
      uint24 public constant poolFee = 3000;
 
-     constructor(ISwapRouter _swapRouter) {
-         swapRouter = _swapRouter;
+     constructor() {
+         swapRouter = ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
      }
 
     /// @notice swapExactInputSingle swaps a fixed amount of DAI for a maximum possible amount of WETH9
@@ -47,11 +47,45 @@ import "./Helpers/TransferHelper.sol";
             recipient: msg.sender,
             deadline: block.timestamp,
             amountIn: amountIn,
-            amountOutMinimum: 0,
+            amountOutMinimum: 0, // Output will not fallBelow this value
             sqrtPriceLimitX96: 0
         });
 
         amountOut = swapRouter.exactInputSingle(params);
  }
 
+    function swapExactOutputSingle(uint256 _amountOut, uint256 _amountInMaximum) external returns(uint amountIn) {
+        // Aprove this contract for amountInMaxmimum
+
+        // Transfer from msg.sender to this Contract
+        TransferHelper.safeTransferFrom(DAI, msg.sender, address(this), _amountInMaximum);
+
+        // Approve to router
+        TransferHelper.safeApprove(DAI, address(swapRouter), _amountInMaximum);
+
+        ISwapRouter.ExactOutputSingleParams memory params = ISwapRouter.ExactOutputSingleParams({
+            tokenIn: DAI,
+            tokenOut: WETH9,
+            fee: poolFee,
+            recipient: msg.sender,
+            deadline: block.timestamp,
+            amountOut: _amountOut,
+            amountInMaximum: _amountInMaximum,
+            sqrtPriceLimitX96: 0
+        });
+
+        amountIn = swapRouter.exactOutputSingle(params);
+
+        if(amountIn < _amountInMaximum) {
+            // Make a refund to sender
+            // First we approved router all input. Router transfer itself the usable amount.
+            // Leftover amount is still in approval
+            // We will set approval to zero. 
+            TransferHelper.safeApprove(DAI, address(swapRouter), 0);
+
+            // As Router has not touched the leftover amount from approvals, so it will be still our contract owns
+            // We will transfer it to sender
+            TransferHelper.safeTransfer(DAI, msg.sender, _amountInMaximum - amountIn);
+        }
+    }
  }
